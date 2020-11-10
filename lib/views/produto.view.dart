@@ -5,94 +5,73 @@ import 'package:flutter_mobx/flutter_mobx.dart';
 import 'package:provider/provider.dart';
 import '../app_status.dart';
 
-class ItemListView extends StatefulWidget {
+class ProdutoListView extends StatefulWidget {
   @override
-  _ItemListViewState createState() => _ItemListViewState();
+  _ProdutoListViewState createState() => _ProdutoListViewState();
 }
 
-class _ItemListViewState extends State<ItemListView> {
-  final _navigatorKey = GlobalKey<NavigatorState>();
+class _ProdutoListViewState extends State<ProdutoListView> {
   final _formKey = GlobalKey<FormState>();
   var _itemController = TextEditingController();
-  var _list = List<Item>();
-  var _controller = ItemController();
-
-  String _theme = 'Light';
-  var _themeData = ThemeData.light();
-
-  @override
-  void initState() {
-    super.initState();
-    _loadTheme();
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _controller.getAll().then((data) {
-        setState(() {
-          _list = _controller.list;
-        });
-      });
-    });
-  }
+  ProdutoController _controller = null;
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      navigatorKey: _navigatorKey,
-      debugShowCheckedModeBanner: false,
-      theme: _themeData,
-      home: Scaffold(
-        appBar: AppBar(
-          backgroundColor: Color.fromRGBO(255, 128, 0, 10),
-          title: Text('O que que tem que comprar?'),
-          centerTitle: true,
-          actions: [_popupMenuButton()],
-        ),
-        body: Scrollbar(
-          child: ListView(
-            children: [
-              for (int i = 0; i < _list.length; i++)
-                ListTile(
-                    title: CheckboxListTile(
-                  controlAffinity: ListTileControlAffinity.leading,
-                  title: _list[i].concluido
-                      ? Text(
-                          _list[i].nome,
-                          style:
-                              TextStyle(decoration: TextDecoration.lineThrough),
-                        )
-                      : Text(_list[i].nome),
-                  value: _list[i].concluido,
-                  secondary: IconButton(
-                    icon: Icon(
-                      Icons.delete,
-                      size: 20.0,
-                      color: Colors.red[900],
+    _controller = Provider.of<ProdutoController>(context);
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('O que que tem que comprar?'),
+        centerTitle: true,
+        backgroundColor: Color.fromRGBO(255, 128, 0, 10),
+      ),
+      body: Scrollbar(
+        child: Observer(builder: (_) {
+          if (_controller.status == AppStatus.loading) {
+            return Center(
+              child: CircularProgressIndicator(),
+            );
+          } else if (_controller.status == AppStatus.success) {
+            return ListView(
+              children: [
+                for (int i = 0; i < _controller.list.length; i++)
+                  ListTile(
+                      title: CheckboxListTile(
+                    controlAffinity: ListTileControlAffinity.leading,
+                    title: _controller.list[i].concluido
+                        ? Text(
+                            _controller.list[i].nome,
+                            style: TextStyle(
+                                decoration: TextDecoration.lineThrough),
+                          )
+                        : Text(_controller.list[i].nome),
+                    value: _controller.list[i].concluido,
+                    secondary: IconButton(
+                      icon: Icon(
+                        Icons.delete,
+                        size: 20.0,
+                        color: Colors.red[900],
+                      ),
+                      onPressed: () async {
+                        await _controller.delete(_controller.list[i].id);
+                      },
                     ),
-                    onPressed: () {
-                      _controller.delete(i).then((data) {
-                        setState(() {
-                          _list = _controller.list;
-                        });
-                      });
+                    onChanged: (c) async {
+                      Produto edited = _controller.list[i];
+                      edited.concluido = c;
+                      await _controller.update(edited);
                     },
-                  ),
-                  onChanged: (c) {
-                    _list[i].concluido = c;
-                    _controller.updateList(_list).then((data) {
-                      setState(() {
-                        _list = _controller.list;
-                      });
-                    });
-                  },
-                )),
-            ],
-          ),
-        ),
-        floatingActionButton: FloatingActionButton(
-          child: Icon(Icons.add),
-          backgroundColor: Color.fromRGBO(255, 128, 0, 10),
-          onPressed: () => _displayDialog(context),
-        ),
+                  )),
+              ],
+            );
+          } else {
+            return Text("Carregando... ");
+          }
+        }),
+      ),
+      floatingActionButton: FloatingActionButton(
+        child: Icon(Icons.add),
+        backgroundColor: Color.fromRGBO(255, 128, 0, 10),
+        onPressed: () => _displayDialog(context),
       ),
     );
   }
@@ -108,34 +87,32 @@ class _ItemListViewState extends State<ItemListView> {
                 controller: _itemController,
                 validator: (s) {
                   if (s.isEmpty)
-                    return "Digite o item.";
+                    return "Digite o produto.";
                   else
                     return null;
                 },
                 keyboardType: TextInputType.text,
-                decoration: InputDecoration(labelText: "Item"),
+                decoration: InputDecoration(
+                    labelText: "Produto", fillColor: Colors.orange),
+                cursorColor: Colors.orange,
               ),
             ),
             actions: <Widget>[
               FlatButton(
                 child: new Text('CANCELAR'),
+                textColor: Colors.orange,
                 onPressed: () {
                   Navigator.of(context).pop();
                 },
               ),
               FlatButton(
                 child: new Text('SALVAR'),
+                textColor: Colors.orange,
                 onPressed: () {
                   if (_formKey.currentState.validate()) {
-                    _controller
-                        .create(
-                            Item(nome: _itemController.text, concluido: false))
-                        .then((data) {
-                      setState(() {
-                        _list = _controller.list;
-                        _itemController.text = "";
-                      });
-                    });
+                    _controller.create(
+                        Produto(nome: _itemController.text, concluido: false));
+                    _itemController.text = "";
                     Navigator.of(context).pop();
                   }
                 },
@@ -143,56 +120,5 @@ class _ItemListViewState extends State<ItemListView> {
             ],
           );
         });
-  }
-
-  // Carregando o tema salvo pelo usuário
-  _loadTheme() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _theme = (prefs.getString('theme') ?? 'Light');
-      _themeData = _theme == 'Dark' ? ThemeData.dark() : ThemeData.light();
-    });
-  }
-
-// Carregando o tema salvo pelo usuário
-  _setTheme(theme) async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _theme = theme;
-      _themeData = theme == 'Dark' ? ThemeData.dark() : ThemeData.light();
-      prefs.setString('theme', theme);
-    });
-  }
-
-  _popupMenuButton() {
-    return PopupMenuButton(
-      onSelected: (value) => _setTheme(value),
-      itemBuilder: (context) {
-        var list = List<PopupMenuEntry<Object>>();
-        list.add(
-          PopupMenuItem(child: Text("Configurar Tema")),
-        );
-        list.add(
-          PopupMenuDivider(
-            height: 10,
-          ),
-        );
-        list.add(
-          CheckedPopupMenuItem(
-            child: Text("Light"),
-            value: 'Light',
-            checked: _theme == 'Light',
-          ),
-        );
-        list.add(
-          CheckedPopupMenuItem(
-            child: Text("Dark"),
-            value: 'Dark',
-            checked: _theme == 'Dark',
-          ),
-        );
-        return list;
-      },
-    );
   }
 }
